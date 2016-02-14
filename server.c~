@@ -12,6 +12,7 @@ int home_fd = -1;
 sqlite3 * userinfo_db;
 
 #define INFOFILEPATH "users"
+#define EXIT_FAILURE -1
 int main()
 {
     int socket_fd;
@@ -80,18 +81,18 @@ void * user_handler(void * arg)
         {
             if(userhome_flag == 0)
             {
-		        printf("home offline\n");
+		printf("home offline\n");
                 home_fd = -1;
             }
             else if(userhome_flag == 1)
             {
-		        printf("user offline\n");
+		printf("user offline\n");
                 user_fd = -1;
             }
-	        else
-	        {
-		         printf("%d offline\n", userhome_flag);
-	        }
+	    else
+	    {
+		printf("%d offline\n", userhome_flag);
+	    }
             break;
         }
         else if(rn > 0)
@@ -119,7 +120,7 @@ void service(char * rev_msg, int fd, int * userhome_flag, int rn)
     int cmd_start;
     int res;
     int rev_len = strlen(rev_msg);
-    if((user_fd == fd)&&(home_fd != -1))
+    if(user_fd == fd)
     {
        res = write(home_fd, rev_msg, rn);
        if(res <= 0)
@@ -128,10 +129,10 @@ void service(char * rev_msg, int fd, int * userhome_flag, int rn)
        }
        else
        {
-	      printf("user: %d has sent to home: %d\n", user_fd, home_fd);
+	  printf("user: %d has sent to home: %d\n", user_fd, home_fd);
        }
     }
-    else if((home_fd == fd)&&(user_fd != -1))
+    else if(home_fd == fd)
     {
        res = write(user_fd, rev_msg, rn);
        if(res <= 0)
@@ -387,7 +388,7 @@ void authentication(char * account, char * password, int fd, int * userhome_flag
                     fprintf(stderr, "write result error! %s %d", __FILE__, __LINE__);
                     exit(EXIT_FAILURE);
                 }
-                DEBUG("%s home login failed!\n", account);
+                DEBUG("%s home login failed!\n", account));
             }
         }
         else//is user

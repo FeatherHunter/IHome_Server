@@ -1,7 +1,7 @@
 #ifndef _H_IHOMESERVER
 #define _H_IHOMESERVER
 
-#define MESIZE 2048
+#define MESIZE 8192
 #define ACCOUNT_MAX 32
 
 #define COMMAND_PULSE  '0'
@@ -25,6 +25,6 @@
 #define COMMAND_SEPERATOR 31
 
 void * user_handler(void * arg);//deal with ever user
-void service(char * rev_msg, int fd, int * userhome_flag);//
+void service(char * rev_msg, int fd, int * userhome_flag, int rn);//
 void authentication(char * account, char * password, int fd, int * userhome_flag);
 #endif // _H_IHOMESERVER
