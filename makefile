@@ -1,4 +1,5 @@
 objects = server.o socket_server.o
+
 out = ihome
 
 ihome: $(objects)
@@ -10,6 +11,6 @@ socket_server.o: idebug.h
 .PHONY:clean
 .PHONY:flush
 clean:
-	-rm $(objects)
+	-rm $(objects) *~
 flush:
 	-rm $(out)
