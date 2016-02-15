@@ -25,6 +25,11 @@
 #define COMMAND_SEPERATOR 31
 
 void * user_handler(void * arg);//deal with ever user
-void service(char * rev_msg, int fd, int * userhome_flag, int rn);//
-void authentication(char * account, char * password, int fd, int * userhome_flag);
+void service(char * rev_msg, int fd, int rn);//
+void authentication(char * account, char * password, int fd);
+
+void * server_manager(void * arg);
+void menu();
+void display_online();
+
 #endif // _H_IHOMESERVER
