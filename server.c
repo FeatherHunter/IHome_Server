@@ -8,7 +8,8 @@
 //int user_fd = -1;
 //int home_fd = -1;
 
-//pthread_mutex_t auth_mutex;
+pthread_mutex_t db_mutex;
+
 #define SQLMAX 128
 #define INFOFILEPATH "users"
 #define RANK_ACCOUNT 0
@@ -27,6 +28,8 @@ int main()
     /*socket bind listen*/
     socket_fd = init_server(AF_INET, SERVER_PORT, SERVER_ADDR);
     printf("IP: %s PORT: %d\n", SERVER_ADDR, SERVER_PORT);
+    /*init */
+    pthread_mutex_init(&db_mutex, NULL);
     if(pthread_create(&manager_pid, NULL, (void *)server_manager, (void *)NULL) != 0)
     {
         fprintf(stderr, "server manager create error: %s\n", strerror(errno));
@@ -80,14 +83,14 @@ void * server_manager(void * arg)
 
 void menu()
 {
-    printf("  ---------------------∑˛ŒÒ∆˜--------------------- \n");
-    printf("|            1. œ‘ æ‘⁄œﬂ”√ªß¡–±Ì              |\n");
-    printf("|            2. ◊¢≤·–¬”√ªß–≈œ¢                  |\n");
-    printf("|            3. Ãﬂ≥ˆ”√ªß                             |\n");
-    printf("|            4. π„≤•œ˚œ¢                             |\n");
-    printf("  ---------------------------------------------------\n");
-    printf("|             «Î—°‘Ò(1~4):                          |\n");
-    printf("  ---------------------------------------------------\n");
+    printf("  ---------------------Server---------------------- \n");
+    printf("|        1.display all online users               |\n");
+    printf("|        2.register new user                      |\n");
+    printf("|        3.kick out specific user                 |\n");
+    printf("|        4.broadcast information                  |\n");
+    printf(" -------------------------------------------------\n");
+    printf("|            please input(1~4):                   |\n");
+    printf("  ------------------------------------------------\n");
 }
 
 void display_online()
@@ -96,27 +99,31 @@ void display_online()
     sqlite3 * userinfo_db;
     sqlite3_stmt * stmt;
     char sql[SQLMAX];
+    /*Lock mutex*/
+    //pthread_mutex_lock(&db_mutex);
     if(sqlite3_open(INFOFILEPATH, &userinfo_db) != SQLITE_OK)
     {
             fprintf(stderr, "%s %d usersinfo open err:%s", __FILE__, __LINE__, strerror(errno));
             exit(EXIT_FAILURE);
     }
     memset(sql, 0, sizeof(sql));
-    sprintf(sql, "select account,userfd,homefd from online"); //≤È—ØÀ˘”– ˝æ›
+    sprintf(sql, "select account,userfd,homefd from online"); //Êü•ËØ¢ÊâÄÊúâÊï∞ÊçÆ
     if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
     {
         fprintf(stderr, "%s %d sqlite3_prepare err:%s", __FILE__, __LINE__, strerror(errno));
         exit(EXIT_FAILURE);
     }
     res = sqlite3_step(stmt);
-    printf("************  µ±«∞‘⁄œﬂ”√ªß¡–±Ì **********************\n ");
-    while(res == SQLITE_ROW) //”– ˝æ›
+    printf("************  online users list **********************\n ");
+    while(res == SQLITE_ROW) //ÊúâÊï∞ÊçÆ
     {
-        printf("º“Õ•◊È”√ªß√˚£∫ %s  Home∂À fd: %d  User∂À fd: %d\n", sqlite3_column_text(stmt, RANK_ACCOUNT),
+        printf("family: %s  Home fd: %d  User fd: %d\n", sqlite3_column_text(stmt, RANK_ACCOUNT),
                                                     sqlite3_column_int(stmt, RANK_HOMEFD), sqlite3_column_int(stmt, RANK_USERFD));
         res = sqlite3_step(stmt);
     }
     sqlite3_close(userinfo_db);
+    /*unlock mutex*/
+    //pthread_mutex_unlock(&db_mutex);
 }
 
 /*
@@ -133,6 +140,7 @@ void * user_handler(void * arg)
     int rn;
     int i;
     int res;
+    int sql_err;
 //    int userhome_flag = -1; //0:home,1:user
 
     while(1)
@@ -140,7 +148,7 @@ void * user_handler(void * arg)
         memset(buff, 0, sizeof(buff));
         rn = read(fd, buff, MESIZE);
 #if _DEBUG
-        printf("\n---------- rev msg --------------\n");
+        printf("\n---------- rev msg Ôºö %d byte--------------\n", rn);
         for(i = 0; i < rn; i++)
         {
             if((buff[i] >= '0' && buff[i] <= '9')||(buff[i] >= 'a' && buff[i] <= 'z') )
@@ -150,103 +158,133 @@ void * user_handler(void * arg)
         }
         printf("\n----------------------------------\n");
 #endif // DEBUG
-        if(rn == -1)
+        if(rn <= 0)
         {
+            /*Lock mutex*/
+            //pthread_mutex_lock(&db_mutex);
             if(sqlite3_open(INFOFILEPATH, &userinfo_db) != SQLITE_OK)
             {
                 fprintf(stderr, "%s %d usersinfo open err:%s", __FILE__, __LINE__, strerror(errno));
                 exit(EXIT_FAILURE);
             }
             memset(sql, 0, sizeof(sql));
-            sprintf(sql, "select account,userfd,homefd from online where homefd='%d' OR userfd='%d'", fd, fd); //»°≥ˆuserfd∫Õaccount
+            sprintf(sql, "select account,userfd,homefd from online where homefd='%d' OR userfd='%d'", fd, fd); //ÂèñÂá∫userfdÂíåaccount
             if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
             {
                 fprintf(stderr, "%s %d sqlite3_prepare err:%s", __FILE__, __LINE__, strerror(errno));
                 exit(EXIT_FAILURE);
             }
             res = sqlite3_step(stmt);
-            if(res == SQLITE_ROW) // «‘⁄œﬂ”√ªßµƒ“ª‘±
+            if(res == SQLITE_ROW) //ÊòØÂú®Á∫øÁî®Êà∑ÁöÑ‰∏ÄÂëò
             {
-                printf("%s ", sqlite3_column_text(stmt, RANK_ACCOUNT)); //≤È—ØΩ·π˚÷–µ⁄RANK_ACCOUNTæÕ «”√ªß√˚
-                if(sqlite3_column_int(stmt, RANK_USERFD) == fd) //±Ì æ «”√ªßœ¬œﬂ
+                printf("%s ", sqlite3_column_text(stmt, RANK_ACCOUNT)); //Êü•ËØ¢ÁªìÊûú‰∏≠Á¨¨RANK_ACCOUNTÂ∞±ÊòØÁî®Êà∑Âêç
+                if(sqlite3_column_int(stmt, RANK_USERFD) == fd) //Ë°®Á§∫ÊòØÁî®Êà∑‰∏ãÁ∫ø
                 {
                     printf("user(fd=%d)  offline\n", fd);
-                    if(sqlite3_column_int(stmt, RANK_HOMEFD) == -1) //»Áπ˚homefd=-1±Ì æ∆‰œ¬œﬂ£¨user“≤œ¬œﬂ‘Ú‘⁄online list÷–◊¢œ˙’˚∏ˆ”√ªß◊È
+                    if(sqlite3_column_int(stmt, RANK_HOMEFD) == -1) //Â¶ÇÊûúhomefd=-1Ë°®Á§∫ÂÖ∂‰∏ãÁ∫øÔºåuser‰πü‰∏ãÁ∫øÂàôÂú®online list‰∏≠Ê≥®ÈîÄÊï¥‰∏™Áî®Êà∑ÁªÑ
                     {
                         memset(sql, 0, sizeof(sql));
-                        sprintf(sql, "delete from online where account='%s'", sqlite3_column_text(stmt, RANK_ACCOUNT)); //…æ≥˝’˚∏ˆ”√ªß◊È
+                        sprintf(sql, "delete from online where account='%s'", sqlite3_column_text(stmt, RANK_ACCOUNT)); //Âà†Èô§Êï¥‰∏™Áî®Êà∑ÁªÑ
+                        sqlite3_finalize(stmt);
                         if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
                         {
                             fprintf(stderr, "%s %d sqlite3_prepare err:%s", __FILE__, __LINE__, strerror(errno));
                             exit(EXIT_FAILURE);
                         }
                         res = sqlite3_step(stmt);
-                        if(res!= SQLITE_DONE)                 //∑µªÿSQLITE_DONE ±Ì æ÷¥––≥…π¶
+                        if(res!= SQLITE_DONE)                 //ËøîÂõûSQLITE_DONE Ë°®Á§∫ÊâßË°åÊàêÂäü
                         {
                             fprintf(stderr, "%s %d step err:%s", __FILE__, __LINE__, strerror(errno));
                             exit(EXIT_FAILURE);
                         }
                     }
-                    else //ΩˆΩˆ «”√ªß◊¢œ˙
+                    else //‰ªÖ‰ªÖÊòØÁî®Êà∑Ê≥®ÈîÄ
                     {
                         memset(sql, 0, sizeof(sql));
-                        sprintf(sql, "update online set userfd=-1, where account='%s'", sqlite3_column_text(stmt, RANK_ACCOUNT)); //◊¢œ˙”√ªß∂À,
-                        if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
+                        sprintf(sql, "delete from online where account='%s'", sqlite3_column_text(stmt, RANK_ACCOUNT)); //Ê≥®ÈîÄÁî®Êà∑Á´Ø
+                        //sprintf(sql, "update online set userfd=-1 where account='%s'", sqlite3_column_text(stmt, RANK_ACCOUNT)); //Ê≥®ÈîÄÁî®Êà∑Á´Ø
+                        sqlite3_finalize(stmt);
+                        if((sql_err = sqlite3_prepare_v2(userinfo_db, sql, -1, &stmt, NULL) )!= SQLITE_OK)
                         {
-                            fprintf(stderr, "%s %d sqlite3_prepare err:%s", __FILE__, __LINE__, strerror(errno));
+                            fprintf(stderr, "%s %d sqlite3_prepare err%d", __FILE__, __LINE__, sql_err);
                             exit(EXIT_FAILURE);
                         }
-                        res = sqlite3_step(stmt);
-                        if(res != SQLITE_DONE)                 //∑µªÿSQLITE_DONE ±Ì æ÷¥––≥…π¶
-                        {
-                            fprintf(stderr, "%s %d step err:%s", __FILE__, __LINE__, strerror(errno));
-                            exit(EXIT_FAILURE);
-                        }
+                        do{
+                             res = sqlite3_step(stmt);
+                            if(res != SQLITE_DONE)                 //ËøîÂõûSQLITE_DONE Ë°®Á§∫ÊâßË°åÊàêÂäü
+                            {
+                                fprintf(stderr, "%s %d step err:%d", __FILE__, __LINE__, res);
+                                if(res == SQLITE_BUSY)
+                                {
+                                    fprintf(stderr, " SQLITE_BUSY\n");
+                                    sleep(1);
+                                    continue;
+                                }
+                                else
+                                {
+                                    exit(EXIT_FAILURE);
+                                }
+                            }
+                        }while(1);
                     }
                 }
                 else
                 {
                     printf("home(fd=%d)  offline\n", fd);
-                    if(sqlite3_column_int(stmt, RANK_USERFD) == -1) //»Áπ˚userfd=-1±Ì æ∆‰œ¬œﬂ£¨homefd“≤œ¬œﬂ,‘Ú‘⁄online list÷–◊¢œ˙’˚∏ˆ”√ªß◊È
+                    if(sqlite3_column_int(stmt, RANK_USERFD) == -1) //Â¶ÇÊûúuserfd=-1Ë°®Á§∫ÂÖ∂‰∏ãÁ∫øÔºåhomefd‰πü‰∏ãÁ∫ø,ÂàôÂú®online list‰∏≠Ê≥®ÈîÄÊï¥‰∏™Áî®Êà∑ÁªÑ
                     {
                         memset(sql, 0, sizeof(sql));
-                        sprintf(sql, "delete from online where account='%s'", sqlite3_column_text(stmt, RANK_ACCOUNT)); //…æ≥˝’˚∏ˆ”√ªß◊È
+                        sprintf(sql, "delete from online where account='%s'", sqlite3_column_text(stmt, RANK_ACCOUNT)); //Âà†Èô§Êï¥‰∏™Áî®Êà∑ÁªÑ
+                        sqlite3_finalize(stmt);
                         if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
                         {
                             fprintf(stderr, "%s %d sqlite3_prepare err:%s", __FILE__, __LINE__, strerror(errno));
                             exit(EXIT_FAILURE);
                         }
                         res = sqlite3_step(stmt);
-                        if(res != SQLITE_DONE)                 //∑µªÿSQLITE_DONE ±Ì æ÷¥––≥…π¶
+                        if(res != SQLITE_DONE)                 //ËøîÂõûSQLITE_DONE Ë°®Á§∫ÊâßË°åÊàêÂäü
                         {
                             fprintf(stderr, "%s %d step err:%s", __FILE__, __LINE__, strerror(errno));
                             exit(EXIT_FAILURE);
                         }
                     }
-                    else //ΩˆΩˆ «home◊¢œ˙
+                    else //‰ªÖ‰ªÖÊòØhomeÊ≥®ÈîÄ
                     {
                         memset(sql, 0, sizeof(sql));
-                        sprintf(sql, "update online set homefd=-1, where account='%s'", sqlite3_column_text(stmt, RANK_ACCOUNT)); //◊¢œ˙home∂À,
+                        sprintf(sql, "update online set homefd=-1, where account='%s'", sqlite3_column_text(stmt, RANK_ACCOUNT)); //Ê≥®ÈîÄhomeÁ´Ø,
                         if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
                         {
                             fprintf(stderr, "%s %d sqlite3_prepare err:%s", __FILE__, __LINE__, strerror(errno));
                             exit(EXIT_FAILURE);
                         }
-                        res = sqlite3_step(stmt);
-                        if(res != SQLITE_DONE)                 //∑µªÿSQLITE_DONE ±Ì æ÷¥––≥…π¶
-                        {
-                            fprintf(stderr, "%s %d step err:%s", __FILE__, __LINE__, strerror(errno));
-                            exit(EXIT_FAILURE);
-                        }
+                        do{
+                             res = sqlite3_step(stmt);
+                            if(res != SQLITE_DONE)                 //ËøîÂõûSQLITE_DONE Ë°®Á§∫ÊâßË°åÊàêÂäü
+                            {
+                                fprintf(stderr, "%s %d step err:%d", __FILE__, __LINE__, res);
+                                if(res == SQLITE_BUSY)
+                                {
+                                    fprintf(stderr, " SQLITE_BUSY\n");
+                                    sleep(1);
+                                    continue;
+                                }
+                                else
+                                {
+                                    exit(EXIT_FAILURE);
+                                }
+                            }
+                        }while(1);
                     }//end of RANK_USERFD
                 }
 
             }
-            else //ƒ™√˚∆‰√Óµƒ”√ªß
+            else //Ëé´ÂêçÂÖ∂Â¶ôÁöÑÁî®Êà∑
             {
                 printf("no online list's user offline, fd = %d\n", fd);
             }
-            sqlite3_close(userinfo_db); //πÿ±’ ˝æ›ø‚
+            sqlite3_close(userinfo_db); //ÂÖ≥Èó≠Êï∞ÊçÆÂ∫ì
+            /*unLock mutex*/
+            //pthread_mutex_unlock(&db_mutex);
             break;
 /*
             if(userhome_flag == 0)
@@ -268,7 +306,7 @@ void * user_handler(void * arg)
         }
         else if(rn > 0)
         {
-            service(buff, fd, rn);
+            //service(buff, fd, rn);
         }
     }
     close(fd);
@@ -278,8 +316,8 @@ void service(char * rev_msg, int fd, int rn)
 {
     int type;
     int subtype;
-    int home_fd;
-    int user_fd;
+    int home_fd = 1;
+    int user_fd = 1;
 
     sqlite3 * userinfo_db;
     sqlite3_stmt * stmt;
@@ -297,64 +335,8 @@ void service(char * rev_msg, int fd, int rn)
     int cmd_start;
     int res;
     int rev_len = strlen(rev_msg);
-    if(sqlite3_open(INFOFILEPATH, &userinfo_db) != SQLITE_OK)
-    {
-        fprintf(stderr, "%s %d usersinfo open err:%s", __FILE__, __LINE__, strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-    memset(sql, 0, sizeof(sql));
-    sprintf(sql, "select account,userfd,homefd from online where homefd='%d' OR userfd='%d'", fd, fd); //»°≥ˆuserfd∫Õaccount
-    if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
-    {
-        fprintf(stderr, "%s %d sqlite3_prepare err:%s", __FILE__, __LINE__, strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-    res = sqlite3_step(stmt);
-    if(res != SQLITE_ROW) //≤È—Ø ß∞‹
-    {
-        fprintf(stderr, "sevice √ª”–’“µΩonline÷–”–∏√‘⁄œﬂ”√ªß");
-        return; //Ω· ¯¥¶¿Ì
-    }
-    user_fd = sqlite3_column_int(stmt, RANK_USERFD);
-    home_fd = sqlite3_column_int(stmt, RANK_HOMEFD);
-    if(user_fd == fd)
-    {
-        if(home_fd != -1)//home‘⁄œﬂ
-        {
-            res = write(home_fd, rev_msg, rn);
-            if(res <= 0)
-            {
-                fprintf(stderr, "write result error! %s %d", __FILE__, __LINE__);
-            }
-            else
-            {
-                printf("user: %d has sent to home: %d\n", user_fd, home_fd);
-            }
-        }
-        else//home offline
-        {
-            printf("user: %d  home offline\n", user_fd);
-        }
-    }
-    else if(home_fd == fd)
-    {
-        if(user_fd != -1)//home‘⁄œﬂ
-        {
-            res = write(user_fd, rev_msg, rn);
-            if(res <= 0)
-            {
-                fprintf(stderr, "write result error! %s %d", __FILE__, __LINE__);
-            }
-            else
-            {
-                printf("home: %d has sent to user: %d\n", home_fd ,user_fd);
-            }
-        }
-        else//home offline
-        {
-            printf("home: %d  user offline\n", home_fd);
-        }
-    }
+
+    /*ÂÖàÂ§ÑÁêÜ‰ø°ÊÅØ*/
     i = 0;
     while((rev_msg[i] != '\0')&&(i < rev_len))
     {
@@ -373,7 +355,7 @@ void service(char * rev_msg, int fd, int rn)
                 default: printf("unknown type:%d\n", type);
             }
 #endif
-            /*Œ™–ƒÃ¯*/
+            /*‰∏∫ÂøÉË∑≥*/
             if(type == COMMAND_PULSE)
             {
                 sprintf(tempbuf, "%c%c%c",COMMAND_PULSE,COMMAND_SEPERATOR, COMMAND_END);
@@ -533,6 +515,71 @@ void service(char * rev_msg, int fd, int rn)
 
         }//end of command_result
 #endif
+    }//end of handle receive message
+    /*Lock mutex*/
+    //pthread_mutex_lock(&db_mutex);
+    if(sqlite3_open(INFOFILEPATH, &userinfo_db) != SQLITE_OK)
+    {
+        fprintf(stderr, "%s %d usersinfo open err:%s", __FILE__, __LINE__, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    memset(sql, 0, sizeof(sql));
+    sprintf(sql, "select account,userfd,homefd from online where homefd='%d' OR userfd='%d'", fd, fd); //ÂèñÂá∫userfdÂíåaccount
+    sqlite3_finalize(stmt);
+    if(sqlite3_prepare_v2(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
+    {
+        fprintf(stderr, "%s %d sqlite3_prepare err:%s", __FILE__, __LINE__, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    res = sqlite3_step(stmt);
+    if(res != SQLITE_ROW) //Êü•ËØ¢Â§±Ë¥•
+    {
+        fprintf(stderr, "sevice not found this users");
+        return; //ÁªìÊùüÂ§ÑÁêÜ
+    }
+    user_fd = sqlite3_column_int(stmt, RANK_USERFD);
+    home_fd = sqlite3_column_int(stmt, RANK_HOMEFD);
+    sqlite3_close(userinfo_db);
+    /*unLock mutex*/
+    //pthread_mutex_unlock(&db_mutex);
+
+    if(user_fd == fd)
+    {
+        if(home_fd != -1)//homeÂú®Á∫ø
+        {
+            res = write(home_fd, rev_msg, rn);
+            if(res <= 0)
+            {
+                fprintf(stderr, "write result error! %s %d", __FILE__, __LINE__);
+            }
+            else
+            {
+                printf("user: %d has sent to home: %d\n", user_fd, home_fd);
+            }
+        }
+        else//home offline
+        {
+            printf("user: %d  home offline\n", user_fd);
+        }
+    }
+    else if(home_fd == fd)
+    {
+        if(user_fd != -1)//homeÂú®Á∫ø
+        {
+            res = write(user_fd, rev_msg, rn);
+            if(res <= 0)
+            {
+                fprintf(stderr, "write result error! %s %d", __FILE__, __LINE__);
+            }
+            else
+            {
+                printf("home: %d has sent to user: %d\n", home_fd ,user_fd);
+            }
+        }
+        else//home offline
+        {
+            printf("home: %d  user offline\n", home_fd);
+        }
     }
 }
 void authentication(char * account, char * password, int fd)
@@ -560,13 +607,16 @@ void authentication(char * account, char * password, int fd)
     }
 
     DEBUG("AUTHENTICATION account:%s pssword:%s\n",account, password);
+    /*Lock mutex*/
+   // pthread_mutex_lock(&db_mutex);
      if( sqlite3_open(INFOFILEPATH, &userinfo_db) != SQLITE_OK)
     {
             fprintf(stderr, "%s %d usersinfo open err:%s", __FILE__, __LINE__, strerror(errno));
             exit(EXIT_FAILURE);
     }
     sprintf(sql, "select password from account where account='%s'", real_account);
-    if( sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
+    sqlite3_finalize(stmt);
+    if( sqlite3_prepare_v2(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
     {
             fprintf(stderr, "%s %d auth prepare err:%s", __FILE__, __LINE__, strerror(errno));
             exit(EXIT_FAILURE);
@@ -578,8 +628,8 @@ void authentication(char * account, char * password, int fd)
         {
             if(strcmp(password, real_account) == 0) //real_account == password
             {
-                /*»∑∂®‘⁄œﬂ¡–±Ì÷– «∑Ò”–∏√º“Õ•*/
-                memset(sql, 0, sizeof(sql)); //«Âø’ª∫≥Â«¯
+                /*Á°ÆÂÆöÂú®Á∫øÂàóË°®‰∏≠ÊòØÂê¶ÊúâËØ•ÂÆ∂Â∫≠*/
+                memset(sql, 0, sizeof(sql)); //Ê∏ÖÁ©∫ÁºìÂÜ≤Âå∫
                 sprintf(sql, "select  account from online where account='%s'", real_account);
                 if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
                 {
@@ -587,10 +637,10 @@ void authentication(char * account, char * password, int fd)
                     exit(EXIT_FAILURE);
                 }
                 res = sqlite3_step(stmt);
-                if(res != SQLITE_ROW) //‘⁄œﬂ¡–±Ì√ª”–∏√”√ªß£¨“Ú¥À‘⁄‘⁄œﬂ¡–±Ì–¬Ω®”√ªß
+                if(res != SQLITE_ROW) //Âú®Á∫øÂàóË°®Ê≤°ÊúâËØ•Áî®Êà∑ÔºåÂõ†Ê≠§Âú®Âú®Á∫øÂàóË°®Êñ∞Âª∫Áî®Êà∑
                 {
-                     memset(sql, 0, sizeof(sql)); //«Âø’ª∫≥Â«¯
-                     sprintf(sql, "insert into online(account, userfd, homefd) values('%s', -1, %d)", real_account, fd); //≤Â»Îaccount
+                     memset(sql, 0, sizeof(sql)); //Ê∏ÖÁ©∫ÁºìÂÜ≤Âå∫
+                     sprintf(sql, "insert into online(account, userfd, homefd) values('%s', -1, %d)", real_account, fd); //ÊèíÂÖ•account
                      if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
                      {
                          fprintf(stderr, "%s %d insert new account prepare err:%s\n", __FILE__, __LINE__, strerror(errno));
@@ -603,24 +653,24 @@ void authentication(char * account, char * password, int fd)
                          exit(EXIT_FAILURE);
                      }
                 }
-                else //∏√º“Õ•◊È‘⁄œﬂ£¨÷±Ω”∏¸–¬homefdº¥ø…
+                else //ËØ•ÂÆ∂Â∫≠ÁªÑÂú®Á∫øÔºåÁõ¥Êé•Êõ¥Êñ∞homefdÂç≥ÂèØ
                 {
-                    /*∏¸–¬º“Õ•fd*/
-                    memset(sql, 0, sizeof(sql)); //«Âø’ª∫≥Â«¯
-                    sprintf(sql, "update online set homefd=%d,where account='%s'", fd, real_account); //∏¸–¬home_fd
-                    if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
+                    /*Êõ¥Êñ∞ÂÆ∂Â∫≠fd*/
+                    memset(sql, 0, sizeof(sql)); //Ê∏ÖÁ©∫ÁºìÂÜ≤Âå∫
+                    sprintf(sql, "update online set homefd=%d where account='%s'", fd, real_account); //Êõ¥Êñ∞home_fd
+                    if((res = sqlite3_prepare_v2(userinfo_db, sql, -1, &stmt, NULL) )!= SQLITE_OK)
                     {
-                        fprintf(stderr, "%s %d insert home_fd prepare err:%s\n", __FILE__, __LINE__, strerror(errno));
+                        fprintf(stderr, "%s %d update home_fd prepare err:%d\n", __FILE__, __LINE__, res);
                         exit(EXIT_FAILURE);
                     }
                     res = sqlite3_step(stmt);
                     if(res != SQLITE_DONE)
                     {
-                        fprintf(stderr, "%s %d insert home_fd err:%s\n", __FILE__, __LINE__, strerror(errno));
+                        fprintf(stderr, "account :%s %s %d update home_fd err:%d\n", real_account, __FILE__, __LINE__, res);
                         exit(EXIT_FAILURE);
                     }
                 }
-                // home_fd = fd; //º«¬ºº“Õ•fd
+                // home_fd = fd; //ËÆ∞ÂΩïÂÆ∂Â∫≠fd
                 // *userhome_flag = 0;
                 sprintf(tempbuf, "%c%cSERVER%c%c%c%c%c%c",COMMAND_RESULT,COMMAND_SEPERATOR,COMMAND_SEPERATOR,
                                 RES_LOGIN,COMMAND_SEPERATOR,
@@ -633,7 +683,7 @@ void authentication(char * account, char * password, int fd)
                }
                DEBUG("%s home login success!\n", account);
             }
-            else//—È÷§ ß∞‹
+            else//È™åËØÅÂ§±Ë¥•
             {
                 sprintf(tempbuf, "%c%cSERVER%c%c%c%c%c%c",COMMAND_RESULT,COMMAND_SEPERATOR,COMMAND_SEPERATOR,RES_LOGIN,COMMAND_SEPERATOR, LOGIN_FAILED,COMMAND_SEPERATOR, COMMAND_END);
                 res = write(fd, tempbuf, strlen(tempbuf));
@@ -649,8 +699,8 @@ void authentication(char * account, char * password, int fd)
         {
             if(strcmp(password, sqlite3_column_text(stmt, 0)) == 0)//compare password success
             {
-                /*»∑∂®‘⁄œﬂ¡–±Ì÷– «∑Ò”–∏√º“Õ•”√ªß◊È*/
-                memset(sql, 0, sizeof(sql)); //«Âø’ª∫≥Â«¯
+                /*Á°ÆÂÆöÂú®Á∫øÂàóË°®‰∏≠ÊòØÂê¶ÊúâËØ•ÂÆ∂Â∫≠Áî®Êà∑ÁªÑ*/
+                memset(sql, 0, sizeof(sql)); //Ê∏ÖÁ©∫ÁºìÂÜ≤Âå∫
                 sprintf(sql, "select  account from online where account='%s'", real_account);
                 if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
                 {
@@ -658,11 +708,11 @@ void authentication(char * account, char * password, int fd)
                     exit(EXIT_FAILURE);
                 }
                 res = sqlite3_step(stmt);
-                if(res != SQLITE_ROW) //‘⁄œﬂ¡–±Ì√ª”–∏√”√ªß£¨“Ú¥À‘⁄‘⁄œﬂ¡–±Ì–¬Ω®”√ªß,≤¢«“º”»Îuserfd
+                if(res != SQLITE_ROW) //Âú®Á∫øÂàóË°®Ê≤°ÊúâËØ•Áî®Êà∑ÔºåÂõ†Ê≠§Âú®Âú®Á∫øÂàóË°®Êñ∞Âª∫Áî®Êà∑,Âπ∂‰∏îÂä†ÂÖ•userfd
                 {
-                     memset(sql, 0, sizeof(sql)); //«Âø’ª∫≥Â«¯
-                     //sprintf(sql, "insert into online(account) values('%s')", real_account); //≤Â»Îaccount
-                     sprintf(sql, "insert into online(account, userfd, homefd) values('%s', %d, -1)", real_account, fd); //≤Â»Îaccount
+                     memset(sql, 0, sizeof(sql)); //Ê∏ÖÁ©∫ÁºìÂÜ≤Âå∫
+                     //sprintf(sql, "insert into online(account) values('%s')", real_account); //ÊèíÂÖ•account
+                     sprintf(sql, "insert into online(account, userfd, homefd) values('%s', %d, -1)", real_account, fd); //ÊèíÂÖ•account
                      if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
                      {
                          fprintf(stderr, "%s %d insert new account prepare err:%s\n", __FILE__, __LINE__, strerror(errno));
@@ -675,27 +725,26 @@ void authentication(char * account, char * password, int fd)
                          exit(EXIT_FAILURE);
                      }
                 }
-                else //»Áπ˚º“Õ•◊È‘⁄‘⁄œﬂ¡–±Ì÷–£¨÷±Ω”∏¸–¬userfd
+                else //Â¶ÇÊûúÂÆ∂Â∫≠ÁªÑÂú®Âú®Á∫øÂàóË°®‰∏≠ÔºåÁõ¥Êé•Êõ¥Êñ∞userfd
                 {
-                    /*update ”√ªßfd*/
-                    memset(sql, 0, sizeof(sql)); //«Âø’ª∫≥Â«¯
-                    //sprintf(sql, "insert into online(homefd) values('%d') where account='%s'", fd, real_account); //≤Â»Îhome_fd
-                    sprintf(sql, "update online set  userfd=%d,where account='%s'", fd, real_account); //∏¸–¬user_fd
-                    if(sqlite3_prepare(userinfo_db, sql, -1, &stmt, NULL) != SQLITE_OK)
+                    /*update Áî®Êà∑fd*/
+                    memset(sql, 0, sizeof(sql)); //Ê∏ÖÁ©∫ÁºìÂÜ≤Âå∫
+                    //sprintf(sql, "insert into online(homefd) values('%d') where account='%s'", fd, real_account); //ÊèíÂÖ•home_fd
+                    sprintf(sql, "update online set userfd=%d where account='%s'", fd, real_account); //Êõ¥Êñ∞user_fd
+                    if((res = sqlite3_prepare_v2(userinfo_db, sql, -1, &stmt, NULL) )!= SQLITE_OK)
                     {
-                        fprintf(stderr, "%s %d insert home_fd prepare err:%s\n", __FILE__, __LINE__, strerror(errno));
+                        fprintf(stderr, "%s %d update home_fd prepare err:%d\n", __FILE__, __LINE__, res);
                         exit(EXIT_FAILURE);
                     }
                     res = sqlite3_step(stmt);
                     if(res != SQLITE_DONE)
                     {
-                        fprintf(stderr, "%s %d insert home_fd err:%s\n", __FILE__, __LINE__, strerror(errno));
+                        fprintf(stderr, "%s %d update user_fd err:%d\n", __FILE__, __LINE__, res);
                         exit(EXIT_FAILURE);
                     }
-
                 }
 
- //               user_fd = fd; //º«¬º”√ªßfd
+ //               user_fd = fd; //ËÆ∞ÂΩïÁî®Êà∑fd
  //               *userhome_flag = 1;
                 sprintf(tempbuf, "%c%cSERVER%c%c%c%c%c%c",COMMAND_RESULT,COMMAND_SEPERATOR,COMMAND_SEPERATOR,
                                                                                                         RES_LOGIN,COMMAND_SEPERATOR,
@@ -732,5 +781,8 @@ void authentication(char * account, char * password, int fd)
         }
         DEBUG("%s login falied!\n", account);
     }
-    sqlite3_close(userinfo_db); //πÿ±’ ˝æ›ø‚Œƒº˛
+
+    sqlite3_close(userinfo_db); //ÂÖ≥Èó≠Êï∞ÊçÆÂ∫ìÊñá‰ª∂
+    /*unLock mutex*/
+    //pthread_mutex_unlock(&db_mutex);
 }
